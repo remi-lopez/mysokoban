@@ -1,11 +1,15 @@
 import sys
 import pygame
-import os
-
+from pygame.locals import *
+from pygame import mixer
 from models import *
+from menu import *
+from sound import *
 
-CELL_SIZE = 36
 
+root = os.path.dirname(os.path.abspath(__file__))
+
+SIZE = 36
 PLAYER = '@'
 TARGET = '.'
 SPACE = ' '
@@ -13,142 +17,53 @@ BOX = '$'
 BINGO = '*'
 WALL = '#'
 
-root = os.path.dirname(os.path.abspath(__file__))
-
-
-class File:
-    def __init__(self):
-        self.name = 'level'
-        self.number = 1
-
-    def get_level(self):
-        return self.name + str(self.number)
-
-    def next_level(self):
-        self.number = self.number + 1
-        return self.name + str(self.number)
-
-
-class Screen:
-    @staticmethod
-    def get_screen_size(board):
-        j = 0
-        for i in range(len(board)):
-            j = len(board[i]) if len(board[i]) > j else j
-
-        return j * CELL_SIZE, len(board) * CELL_SIZE
-
-
-class Board:
-    def __init__(self):
-        self.board = []
-
-    def initialize(self, filename: str):
-        with open(root + '/levels/%s' % filename, 'r') as f:
-            for line in f.read().splitlines():
-                self.board.append(list(line))
-            return self.board
-
-    def get_length(self):
-        return len(self.board)
-
-
-class Targets:
-    def __init__(self):
-        self.targets = []
-
-    def initialize(self, board):
-        for i in range(len(board)):
-            for j in range(len(board[i])):
-                if board[i][j] == TARGET:
-                    self.targets.append([i, j])
-        return self.targets
-
-    def is_target(self, row, col):
-        for target in self.targets:
-            if target[0] == row and target[1] == col:
-                return True
-        return False
-
 
 class Game:
     def __init__(self):
         self.filename = File()
-        self.board = Board().initialize(self.filename.get_level())
-        self.targets = Targets().initialize(self.board)
-        self.screen = Screen().get_screen_size(self.board)
+        self.board = Board()
+        self.objective = Objective()
+        self.screen = Screen()
         self.key = 'DOWN'
 
-    def is_target(self, row, col):
-        for target in self.targets:
-            if target[0] == row and target[1] == col:
-                return True
-        return False
-
-    def player_position(self):
-        for i in range(len(self.board)):
-            for j in range(len(self.board[i])):
-                if self.board[i][j] == PLAYER:
-                    return i, j
-
-    def move_player(self, i, j):
-        row, col = self.player_position()
-
-        m, n = i * 2, j * 2
-
-        if self.board[row + i][col + j] == SPACE:
-            self.do_move(row, col, i, j)
-        elif self.board[row + i][col + j] == TARGET:
-            self.do_move(row, col, i, j)
-        elif self.board[row + i][col + j] == BOX:
-            if self.board[row + m][col + n] == SPACE:
-                self.board[row + m][col + n] = BOX
-                self.do_move(row, col, i, j)
-            elif self.board[row + m][col + n] == TARGET:
-                self.board[row + m][col + n] = BINGO
-                self.do_move(row, col, i, j)
-        elif self.board[row + i][col + j] == BINGO:
-            if self.board[row + m][col + n] == SPACE:
-                self.board[row + m][col + n] = BOX
-                self.do_move(row, col, i, j)
-            elif self.board[row + m][col + n] == TARGET:
-                self.board[row + m][col + n] = BINGO
-                self.do_move(row, col, i, j)
-        else:
-            pass
+    def start(self):
+        """ Launch new game """
+        self.board.lines = self.board.initialize(self.filename.get_level())
+        self.objective.targets = self.objective.initialize(self.board.lines)
+        self.screen.size = self.screen.get_screen_size(self.board.lines)
 
     def do_move(self, row, col, i, j):
-        self.board[row + i][col + j] = PLAYER
-        if self.is_target(row, col):
-            self.board[row][col] = TARGET
+        self.board.lines[row + i][col + j] = PLAYER
+        if self.objective.is_target(row, col):
+            self.board.lines[row][col] = TARGET
         else:
-            self.board[row][col] = SPACE
+            self.board.lines[row][col] = SPACE
+
+    # def undo_move(self):
+    #     row, col = self.board.player_position()
+    #     if self.board.previous_board:
+    #         self.board.lines = self.board.previous_board
+    #         self.board.previous_board = []
+    #     self.board.lines[row][col] = PLAYER
 
     def check_win(self):
+        """ Check if all the box are on the targets : go to next level """
         all_on_target = True
-        for target in self.targets:
-            if self.board[target[0]][target[1]] != BINGO:
+        for target in self.objective.targets:
+            if self.board.lines[target[0]][target[1]] != BINGO:
                 all_on_target = False
                 break
 
         if all_on_target:
+            reset_song = mixer.Sound('songs/win.wav')
+            reset_song.play()
+            reset_song.set_volume(1)
             self.filename.number = self.filename.number + 1
-            self.reset(self.filename.get_level())
-
-    def set_player(self):
-        new_player = Player()
-
-        if self.key == 'DOWN':
-            return new_player.image
-        elif self.key == 'UP':
-            return new_player.up
-        elif self.key == 'LEFT':
-            return new_player.left
-        elif self.key == 'RIGHT':
-            return new_player.right
+            self.reset()
 
     def draw(self, screen):
-        player = self.set_player()
+        """ Draw board using images and check if all the box are on the targets"""
+        player = Player().set_player(self.key)
 
         images = {
             WALL: Wall().image,
@@ -159,19 +74,52 @@ class Game:
             PLAYER: player,
         }
 
-        for i in range(len(self.board)):
-            for j in range(len(self.board[i])):
-                screen.blit(
-                    images[self.board[i][j]],
-                    (j * CELL_SIZE, i * CELL_SIZE)
-                )
-
+        self.board.draw(screen, images)
         pygame.display.update()
+
         self.check_win()
 
+    def reset(self):
+        """ Reset current level - restart board, targets and screen """
+        self.board.lines.clear()
+        self.objective.targets.clear()
+        self.start()
+
+    def move_player(self, i, j):
+        row, col = self.board.player_position()
+
+        m, n = i * 2, j * 2
+
+        if self.board.lines[row + i][col + j] == SPACE:
+            self.do_move(row, col, i, j)
+        elif self.board.lines[row + i][col + j] == TARGET:
+            self.do_move(row, col, i, j)
+        elif self.board.lines[row + i][col + j] == BOX:
+            if self.board.lines[row + m][col + n] == SPACE:
+                self.board.lines[row + m][col + n] = BOX
+                self.do_move(row, col, i, j)
+            elif self.board.lines[row + m][col + n] == TARGET:
+                Sound().set_sound('songs/targeted.wav', 0.6)
+                self.board.lines[row + m][col + n] = BINGO
+                self.do_move(row, col, i, j)
+        elif self.board.lines[row + i][col + j] == BINGO:
+            if self.board.lines[row + m][col + n] == SPACE:
+                self.board.lines[row + m][col + n] = BOX
+                self.do_move(row, col, i, j)
+            elif self.board.lines[row + m][col + n] == TARGET:
+                self.board.lines[row + m][col + n] = BINGO
+                self.do_move(row, col, i, j)
+        else:
+            Sound().set_sound('songs/walk.wav', 0.1)
+            pass
+
     def play(self, screen):
+        """ Main loop : handle Quit, move and menu """
         for event in pygame.event.get():
-            if event.type == pygame.KEYDOWN:
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_UP:
                     self.move_player(-1, 0)
                     self.key = 'UP'
@@ -188,32 +136,53 @@ class Game:
                     pygame.quit()
                     sys.exit()
                 elif event.key == pygame.K_r:
-                    self.reset(self.filename.get_level())
-            elif event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
+                    Sound().set_sound('songs/wubba.wav', 0.6)
+                    self.reset()
+                elif event.key == pygame.K_m:
+                    mixer.music.pause()
+                elif event.key == pygame.K_p:
+                    mixer.music.unpause()
+
+                # MENU
+                elif event.key == pygame.K_SPACE:
+                    menu = Menu(self.screen.size)
+                    show_menu = menu.toggle_menu()
+
+                    if show_menu:
+                        action = menu.show()
+                        if action == "replay":
+                            Sound().set_sound('songs/wubba.wav', 0.6)
+                            self.reset()
+                        elif action == "mute":
+                            mixer.music.pause()
+                        elif action == "unmute":
+                            mixer.music.unpause()
+                        elif action == "quit":
+                            pygame.quit()
+                            sys.exit()
 
         self.draw(screen)
-
-    def reset(self, filename):
-        self.board.clear()
-        self.targets.clear()
-        self.board = Board().initialize(filename)
-        self.targets = Targets().initialize(self.board)
-        self.screen = Screen().get_screen_size(self.board)
 
 
 def main():
     game = Game()
+    game.start()
 
     pygame.init()
     pygame.display.init()
     pygame.display.set_caption('My Sokoban')
 
-    screen = pygame.display.set_mode(game.screen)
-    screen.fill((0, 0, 0))
+    screen = pygame.display.set_mode(game.screen.size)
+    bg_img = pygame.transform.scale(
+        pygame.image.load('themes/space.png'),
+        game.screen.size
+    )
+
+    mixer.init()
+    Sound().intro()
 
     while True:
+        screen.blit(bg_img, (0, 0))
         game.play(screen)
 
 
