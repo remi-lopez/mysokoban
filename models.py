@@ -1,5 +1,6 @@
 import pygame
 import os
+from os.path import exists
 
 
 root = os.path.dirname(os.path.abspath(__file__))
@@ -15,13 +16,28 @@ WALL = '#'
 
 class File:
     def __init__(self):
-        """ On construct : return level1 """
+        """ On construct : return level(str) + number(int) """
         self.name = 'level'
         self.number = 1
 
     def get_level(self):
-        """ return current level """
+        """ Return current level (str) """
         return self.name + str(self.number)
+
+    def save_level(self):
+        """ Save current level to backup.txt """
+        f = open('backup.txt', 'w+')
+        f.write(self.get_level())
+        f.close()
+
+    def get_saved_level(self):
+        """ Get current level into backup.txt """
+        file_exists = exists('backup.txt')
+
+        if file_exists:
+            with open('backup.txt') as f:
+                level = f.read()
+                self.number = int(level[5:])
 
 
 class Screen:
